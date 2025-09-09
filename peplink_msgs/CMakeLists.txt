@@ -9,7 +9,13 @@ rosidl_generate_interfaces(
     ${PROJECT_NAME}
         # action/
 
+        msg/Bandwidth.msg
+        msg/Client.msg
+        msg/ClientList.msg
         msg/Firmware.msg
+        msg/Lease.msg
+        msg/Signal.msg
+        msg/SignalDetails.msg
 
         srv/GetFirmware.srv
 )

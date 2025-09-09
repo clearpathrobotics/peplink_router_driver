@@ -38,7 +38,15 @@ import os
 import subprocess
 import threading
 
-from peplink_msgs.msg import Firmware
+from peplink_msgs.msg import (
+    Bandwidth,
+    Client,
+    ClientList,
+    Firmware,
+    Lease,
+    Signal,
+    SignalDetails,
+)
 from peplink_msgs.srv import GetFirmware
 
 import rclpy
@@ -131,6 +139,16 @@ class PeplinkRouterNode(Node):
         )
 
         # Topics
+        self.clients_pub = self.create_publisher(
+            ClientList,
+            'clients',
+            qos_profile=qos_profile_sensor_data
+        )
+        self.client_status_thread = threading.Thread(
+            target=self.client_status_thread_fn
+        )
+        self.client_status_thread.start()
+
         if self.enable_gps_param.value:
             self.navsat_fix_pub = self.create_publisher(
                 NavSatFix,
@@ -199,23 +217,9 @@ class PeplinkRouterNode(Node):
             http_resp = self.session.get(
                 get_url,
                 headers=self.http_headers,
-                verify=False,  # HTTPS certificate regularly fails, so just ignore it
+                verify=False,
             )
 
-            # something of the form
-            # {
-            #   "stat": "ok",
-            #   "response": {
-            #     "1": {
-            #       "version": "8.5.1 build 5714",
-            #       "bootable": true,
-            #       "inUse": true
-            #     },
-            #     "order": [
-            #       1
-            #     ]
-            #   }
-            # }
             data = json.loads(http_resp.content.decode())
             order = data['response']['order']
 
@@ -232,6 +236,56 @@ class PeplinkRouterNode(Node):
 
         return result
 
+    def client_status_thread_fn(self):
+        rate = self.create_rate(1)
+        while rclpy.ok():
+            clients = ClientList()
+            get_url = f'https://{self.ip_address}/api/status.client?connectionType=ethernet wireless'
+            try:
+                http_resp = self.session.get(
+                    get_url,
+                    headers=self.http_headers,
+                    verify=False,
+                )
+                data = json.loads(http_resp.content.decode())
+
+                for client_json in data['response']['list']:
+                    client = Client()
+                    client.ip_address = client_json.get('ip', '')
+                    client.connection_type = client_json.get('connectionType', 'other')
+                    client.name = client_json.get('name', '')
+                    client.mac = client_json.get('mac', '')
+                    client.bssid = client_json.get('bssid', '')
+                    client.essid = client_json.get('essid', '')
+                    client.active = client_json.get('active', False)
+                    client.vlan_id = client_json.get('vlanId', -1)
+
+                    client.lease = Lease()
+                    client.lease.expires_in = client_json.get('lease', {}).get('expiresIn', 0)
+                    client.lease.type = client_json.get('lease', {}).get('type', '')
+
+                    client.signal_strength = Signal()
+                    client.signal_strength.value = client_json.get('signalStrength', {}).get('value', 0)
+                    client.signal_strength.unit = client_json.get('signalStrength', {}).get('unit', '')
+
+                    client.signal_details = SignalDetails()
+                    client.signal_details.strength = client_json.get('signal', {}).get('strength', 0)
+                    client.signal_details.level = client_json.get('signal', {}).get('level', 0)
+
+                    client.bandwidth = Bandwidth()
+                    client.bandwidth.download = client_json.get('speed', {}).get('download', 0)
+                    client.bandwidth.upload = client_json.get('speed', {}).get('upload', 0)
+                    client.bandwidth.unit = client_json.get('speed', {}).get('unit', '')
+
+                    clients.clients.append(client)
+
+                self.clients_pub.publish
+            except Exception as err:
+                self.get_logger().warning(f'Failed to query client status: {err}')
+
+            self.clients_pub.publish(clients)
+            rate.sleep()
+
     def navsat_thread_fn(self):
         rate = self.create_rate(1)
         fix = NavSatFix()
@@ -241,7 +295,7 @@ class PeplinkRouterNode(Node):
                 http_resp = self.session.get(
                     get_url,
                     headers=self.http_headers,
-                    verify=False,  # HTTPS certificate regularly fails, so just ignore it
+                    verify=False,
                 )
                 data = json.loads(http_resp.content.decode())
 
