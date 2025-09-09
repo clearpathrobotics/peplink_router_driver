@@ -11,13 +11,26 @@ rosidl_generate_interfaces(
     ${PROJECT_NAME}
     # action/
 
+    msg/Band.msg
     msg/Bandwidth.msg
+    msg/Carrier.msg
+    msg/CellTower.msg
     msg/Client.msg
     msg/ClientList.msg
     msg/Firmware.msg
+    msg/Gobi.msg
     msg/Lan.msg
     msg/LanList.msg
     msg/Lease.msg
+    msg/Meid.msg
+    msg/Modem.msg
+    msg/Rat.msg
+    msg/Roaming.msg
+    msg/Signal.msg
+    msg/Sim.msg
+    msg/SimGroup.msg
+    msg/Wan.msg
+    msg/WanList.msg
 
     srv/GetFirmware.srv
 

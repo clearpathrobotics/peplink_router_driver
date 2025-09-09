@@ -1,0 +1,16 @@
+string name
+int32 vendor_id
+int32 product_id
+string manufacturer
+peplink_msgs/Carrier carrier
+int32 signal_level
+string network
+string imsi
+string iccid
+string esn
+string mtn
+string apn
+string username
+string password
+string dial_number
+peplink_msgs/Band band
