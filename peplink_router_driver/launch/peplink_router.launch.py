@@ -51,6 +51,9 @@ ARGUMENTS = [
                           description='Login ID for the router'),
     DeclareLaunchArgument('password', default_value='admin',
                           description='Login password for the router'),
+    DeclareLaunchArgument('enable_gps', default_value='false',
+                          description='Enable publishing GPS data from the router',
+                          choices=['false', 'true'])
 ]
 
 
@@ -59,6 +62,7 @@ def launch_setup(context, *args, **kwargs):
     ip_address = LaunchConfiguration('ip_address')
     username = LaunchConfiguration('username')
     password = LaunchConfiguration('password')
+    enable_gps = LaunchConfiguration('enable_gps')
 
     peplink_node = Node(
           name='peplink_router_node',
@@ -69,6 +73,7 @@ def launch_setup(context, *args, **kwargs):
               'ip_address': ip_address,
               'username': username,
               'password': password,
+              'enable_gps': enable_gps,
           }],
       )
 
