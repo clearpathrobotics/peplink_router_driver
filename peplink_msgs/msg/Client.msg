@@ -2,11 +2,8 @@ string ip_address
 string connection_type
 string name
 string mac
-string bssid
-string essid
 bool active
 int32 vlan_id
 peplink_msgs/Lease lease
-peplink_msgs/Signal signal_strength
-peplink_msgs/SignalDetails signal_details
 peplink_msgs/Bandwidth bandwidth
+wireless_msgs/Connection wifi_connection

@@ -43,9 +43,9 @@ from peplink_msgs.msg import (
     Client,
     ClientList,
     Firmware,
+    Lan,
+    LanList,
     Lease,
-    Signal,
-    SignalDetails,
 )
 from peplink_msgs.srv import GetFirmware
 
@@ -60,6 +60,7 @@ from sensor_msgs.msg import NavSatFix
 
 import urllib3
 
+from wireless_msgs.msg import Connection
 
 class PeplinkRouterNode(Node):
     """
@@ -149,6 +150,16 @@ class PeplinkRouterNode(Node):
         )
         self.client_status_thread.start()
 
+        self.lans_pub = self.create_publisher(
+            LanList,
+            'lans',
+            qos_profile=qos_profile_sensor_data
+        )
+        self.lan_status_thread = threading.Thread(
+            target=self.lan_status_thread_fn
+        )
+        self.lan_status_thread.start()
+
         if self.enable_gps_param.value:
             self.navsat_fix_pub = self.create_publisher(
                 NavSatFix,
@@ -219,10 +230,9 @@ class PeplinkRouterNode(Node):
                 headers=self.http_headers,
                 verify=False,
             )
-
             data = json.loads(http_resp.content.decode())
-            order = data['response']['order']
 
+            order = data['response']['order']
             for n in order:
                 fw_json = data['response'][f'{n}']
                 fw = Firmware()
@@ -255,35 +265,61 @@ class PeplinkRouterNode(Node):
                     client.connection_type = client_json.get('connectionType', 'other')
                     client.name = client_json.get('name', '')
                     client.mac = client_json.get('mac', '')
-                    client.bssid = client_json.get('bssid', '')
-                    client.essid = client_json.get('essid', '')
                     client.active = client_json.get('active', False)
                     client.vlan_id = client_json.get('vlanId', -1)
-
-                    client.lease = Lease()
-                    client.lease.expires_in = client_json.get('lease', {}).get('expiresIn', 0)
-                    client.lease.type = client_json.get('lease', {}).get('type', '')
-
-                    client.signal_strength = Signal()
-                    client.signal_strength.value = client_json.get('signalStrength', {}).get('value', 0)
-                    client.signal_strength.unit = client_json.get('signalStrength', {}).get('unit', '')
-
-                    client.signal_details = SignalDetails()
-                    client.signal_details.strength = client_json.get('signal', {}).get('strength', 0)
-                    client.signal_details.level = client_json.get('signal', {}).get('level', 0)
 
                     client.bandwidth = Bandwidth()
                     client.bandwidth.download = client_json.get('speed', {}).get('download', 0)
                     client.bandwidth.upload = client_json.get('speed', {}).get('upload', 0)
                     client.bandwidth.unit = client_json.get('speed', {}).get('unit', '')
 
-                    clients.clients.append(client)
+                    client.wifi_connection = Connection()
+                    client.wifi_connection.essid = client_json.get('essid', '')
+                    client.wifi_connection.bssid = client_json.get('bssid', '')
+                    client.wifi_connection.txpower = client_json.get('signalStrength', {}).get('value', 0)
+                    client.wifi_connection.signal_level = client_json.get('signal', {}).get('strength', 0)
+                    client.wifi_connection.bitrate = (client.bandwidth.download + client.bandwidth.upload) / 2.0
+                    client.wifi_connection.link_quality = client_json.get('signal', {}).get('level', 0) / 5.0
+                    client.wifi_connection.link_quality_raw = str(client_json.get('signal', {}).get('level', 0))
 
-                self.clients_pub.publish
+                    client.lease = Lease()
+                    client.lease.expires_in = client_json.get('lease', {}).get('expiresIn', 0)
+                    client.lease.type = client_json.get('lease', {}).get('type', '')
+
+                    clients.clients.append(client)
             except Exception as err:
                 self.get_logger().warning(f'Failed to query client status: {err}')
 
             self.clients_pub.publish(clients)
+            rate.sleep()
+
+    def lan_status_thread_fn(self):
+        rate = self.create_rate(1)
+        while rclpy.ok():
+            lans = LanList()
+            get_url = f'https://{self.ip_address}/api/status.lan.profile'
+            try:
+                lans = LanList()
+                http_resp = self.session.get(
+                    get_url,
+                    headers=self.http_headers,
+                    verify=False,
+                )
+                data = json.loads(http_resp.content.decode())
+
+                order = data['response']['order']
+                for n in order:
+                    lan_json = data['response'][f'{n}']
+                    lan = Lan()
+                    lan.name = lan_json.get('name', '')
+                    lan.vlan_id = lan_json.get('vlanId', 0)
+                    lan.ip_address = lan_json.get('ip', '')
+                    lan.netmask = lan_json.get('mask', 0)
+                    lans.lans.append(lan)
+            except Exception as err:
+                self.get_logger().warning(f'Failed to query lan status: {err}')
+
+            self.lans_pub.publish(lans)
             rate.sleep()
 
     def navsat_thread_fn(self):
