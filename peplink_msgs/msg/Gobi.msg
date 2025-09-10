@@ -1,1 +1,16 @@
 peplink_msgs/Roaming roaming
+string network
+string mobile_type
+peplink_msgs/SimGroup sim
+peplink_msgs/RemoteSim remote_sim
+peplink_msgs/Carrier carrier
+bool carrier_aggregation
+peplink_msgs/Meid meid
+string imei
+string esn
+string mode
+peplink_msgs/Band[] band
+peplink_msgs/Rat[] rat
+string mcc
+string mnc
+peplink_msgs/CellTower[] cell_tower
