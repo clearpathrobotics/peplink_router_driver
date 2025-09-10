@@ -339,7 +339,7 @@ class PeplinkRouterNode(Node):
                 band.name = band_json.get('name', '')
                 band.channel = band_json.get('channel', 0)
 
-                signal_json = band_json.get('signal')
+                signal_json = band_json.get('signal', {})
                 signal = band.signal
                 signal.rssi = signal_json.get('rssi', 0)
                 signal.sinr = signal_json.get('sinr', 0.0)

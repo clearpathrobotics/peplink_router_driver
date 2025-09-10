@@ -57,12 +57,12 @@ class PeriodicCheck:
         rate: float,
         callback: callable,
     ):
-        self.thread = threading.Thread(target=self.run_in_background)
         self.callback = callback
         self.url = url
         self.nh = nh
         self.rate = rate
 
+        self.thread = threading.Thread(target=self.run_in_background)
         self.thread.start()
 
     def get_json(self):
