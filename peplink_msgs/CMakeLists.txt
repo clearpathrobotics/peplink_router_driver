@@ -13,6 +13,7 @@ rosidl_generate_interfaces(
 
     msg/Band.msg
     msg/Bandwidth.msg
+    msg/BandwidthAllowance.msg
     msg/Carrier.msg
     msg/CellTower.msg
     msg/Client.msg
@@ -25,10 +26,10 @@ rosidl_generate_interfaces(
     msg/Meid.msg
     msg/Modem.msg
     msg/Rat.msg
+    msg/RemoteSim.msg
     msg/Roaming.msg
     msg/Signal.msg
     msg/Sim.msg
-    msg/SimGroup.msg
     msg/Wan.msg
     msg/WanList.msg
 

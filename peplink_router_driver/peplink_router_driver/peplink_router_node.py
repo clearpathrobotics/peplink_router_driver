@@ -38,7 +38,10 @@ import os
 import subprocess
 import threading
 
+from peplink_router_driver.periodic import PeriodicCheck
+
 from peplink_msgs.msg import (
+    Band,
     Bandwidth,
     Client,
     ClientList,
@@ -46,6 +49,10 @@ from peplink_msgs.msg import (
     Lan,
     LanList,
     Lease,
+    Rat,
+    Sim,
+    Wan,
+    WanList,
 )
 from peplink_msgs.srv import GetFirmware
 
@@ -132,45 +139,67 @@ class PeplinkRouterNode(Node):
             self.get_logger().info(f'Login failed after {max_tries} attempts. Some features may be disabled')
 
 
-        # Services
+        # Service servers
         self.get_firmware_srv = self.create_service(
             GetFirmware,
             'get_firmware',
             self.get_firmware_handler,
         )
 
-        # Topics
+        # Topic publishers
         self.clients_pub = self.create_publisher(
             ClientList,
             'clients',
-            qos_profile=qos_profile_sensor_data
+            qos_profile=qos_profile_sensor_data,
         )
-        self.client_status_thread = threading.Thread(
-            target=self.client_status_thread_fn
-        )
-        self.client_status_thread.start()
-
         self.lans_pub = self.create_publisher(
             LanList,
             'lans',
-            qos_profile=qos_profile_sensor_data
+            qos_profile=qos_profile_sensor_data,
         )
-        self.lan_status_thread = threading.Thread(
-            target=self.lan_status_thread_fn
+        self.wans_pub = self.create_publisher(
+            WanList,
+            'wans',
+            qos_profile=qos_profile_sensor_data,
         )
-        self.lan_status_thread.start()
 
+        # Periodic checkers
+        self.periodic_checks = [
+            PeriodicCheck(
+                self,
+                f'https://{self.ip_address}/api/status.client?connectionType=ethernet wireless',
+                1.0,
+                self.publish_clients,
+            ),
+            PeriodicCheck(
+                self,
+                f'https://{self.ip_address}/api/status.lan.profile',
+                1.0,
+                self.publish_lans,
+            ),
+            PeriodicCheck(
+                self,
+                f'https://{self.ip_address}/api/status.wan.connection',
+                1.0,
+                self.publish_wans,
+            ),
+        ]
+
+        # GPS publisher is optional
         if self.enable_gps_param.value:
             self.navsat_fix_pub = self.create_publisher(
                 NavSatFix,
                 'gps_0/fix',
                 qos_profile=qos_profile_sensor_data,
             )
-            # start a background thread to publish the navsat fix data at 1Hz
-            self.navsat_thread = threading.Thread(
-                target=self.navsat_thread_fn,
+            self.periodic_checks.append(
+                PeriodicCheck(
+                    self,
+                    f'https://{self.ip_address}/api/info.location',
+                    1.0,
+                    self.publish_gps,
+                )
             )
-            self.navsat_thread.start()
 
     def wait_for_host(self):
         """
@@ -246,118 +275,240 @@ class PeplinkRouterNode(Node):
 
         return result
 
-    def client_status_thread_fn(self):
-        rate = self.create_rate(1)
-        while rclpy.ok():
-            clients = ClientList()
-            get_url = f'https://{self.ip_address}/api/status.client?connectionType=ethernet wireless'
-            try:
-                http_resp = self.session.get(
-                    get_url,
-                    headers=self.http_headers,
-                    verify=False,
-                )
-                data = json.loads(http_resp.content.decode())
+    def publish_clients(self, data):
+        clients = ClientList()
+        for client_json in data['response']['list']:
+            client = Client()
+            client.ip_address = client_json.get('ip', '')
+            client.connection_type = client_json.get('connectionType', 'other')
+            client.name = client_json.get('name', '')
+            client.mac = client_json.get('mac', '')
+            client.active = client_json.get('active', False)
+            client.vlan_id = client_json.get('vlanId', -1)
 
-                for client_json in data['response']['list']:
-                    client = Client()
-                    client.ip_address = client_json.get('ip', '')
-                    client.connection_type = client_json.get('connectionType', 'other')
-                    client.name = client_json.get('name', '')
-                    client.mac = client_json.get('mac', '')
-                    client.active = client_json.get('active', False)
-                    client.vlan_id = client_json.get('vlanId', -1)
+            client.bandwidth = Bandwidth()
+            client.bandwidth.download = client_json.get('speed', {}).get('download', 0)
+            client.bandwidth.upload = client_json.get('speed', {}).get('upload', 0)
+            client.bandwidth.unit = client_json.get('speed', {}).get('unit', '')
 
-                    client.bandwidth = Bandwidth()
-                    client.bandwidth.download = client_json.get('speed', {}).get('download', 0)
-                    client.bandwidth.upload = client_json.get('speed', {}).get('upload', 0)
-                    client.bandwidth.unit = client_json.get('speed', {}).get('unit', '')
+            client.wifi_connection = Connection()
+            client.wifi_connection.essid = client_json.get('essid', '')
+            client.wifi_connection.bssid = client_json.get('bssid', '')
+            client.wifi_connection.txpower = client_json.get('signalStrength', {}).get('value', 0)
+            client.wifi_connection.signal_level = client_json.get('signal', {}).get('strength', 0)
+            client.wifi_connection.bitrate = (client.bandwidth.download + client.bandwidth.upload) / 2.0
+            client.wifi_connection.link_quality = client_json.get('signal', {}).get('level', 0) / 5.0
+            client.wifi_connection.link_quality_raw = str(client_json.get('signal', {}).get('level', 0))
 
-                    client.wifi_connection = Connection()
-                    client.wifi_connection.essid = client_json.get('essid', '')
-                    client.wifi_connection.bssid = client_json.get('bssid', '')
-                    client.wifi_connection.txpower = client_json.get('signalStrength', {}).get('value', 0)
-                    client.wifi_connection.signal_level = client_json.get('signal', {}).get('strength', 0)
-                    client.wifi_connection.bitrate = (client.bandwidth.download + client.bandwidth.upload) / 2.0
-                    client.wifi_connection.link_quality = client_json.get('signal', {}).get('level', 0) / 5.0
-                    client.wifi_connection.link_quality_raw = str(client_json.get('signal', {}).get('level', 0))
+            client.lease = Lease()
+            client.lease.expires_in = client_json.get('lease', {}).get('expiresIn', 0)
+            client.lease.type = client_json.get('lease', {}).get('type', '')
 
-                    client.lease = Lease()
-                    client.lease.expires_in = client_json.get('lease', {}).get('expiresIn', 0)
-                    client.lease.type = client_json.get('lease', {}).get('type', '')
+            clients.clients.append(client)
 
-                    clients.clients.append(client)
-            except Exception as err:
-                self.get_logger().warning(f'Failed to query client status: {err}')
+        self.clients_pub.publish(clients)
 
-            self.clients_pub.publish(clients)
-            rate.sleep()
+    def publish_lans(self, data):
+        lans = LanList()
+        order = data['response']['order']
+        for n in order:
+            lan_json = data['response'][f'{n}']
+            lan = Lan()
+            lan.name = lan_json.get('name', '')
+            lan.vlan_id = lan_json.get('vlanId', 0)
+            lan.ip_address = lan_json.get('ip', '')
+            lan.netmask = lan_json.get('mask', 0)
+            lans.lans.append(lan)
+        self.lans_pub.publish(lans)
 
-    def lan_status_thread_fn(self):
-        rate = self.create_rate(1)
-        while rclpy.ok():
-            lans = LanList()
-            get_url = f'https://{self.ip_address}/api/status.lan.profile'
-            try:
-                lans = LanList()
-                http_resp = self.session.get(
-                    get_url,
-                    headers=self.http_headers,
-                    verify=False,
-                )
-                data = json.loads(http_resp.content.decode())
+    def publish_wans(self, data):
+        def parse_bands(band_arr, dest):
+            for band_json in band_arr:
+                band = Band()
+                band.name = band_json.get('name', '')
+                band.channel = band_json.get('channel', 0)
 
-                order = data['response']['order']
-                for n in order:
-                    lan_json = data['response'][f'{n}']
-                    lan = Lan()
-                    lan.name = lan_json.get('name', '')
-                    lan.vlan_id = lan_json.get('vlanId', 0)
-                    lan.ip_address = lan_json.get('ip', '')
-                    lan.netmask = lan_json.get('mask', 0)
-                    lans.lans.append(lan)
-            except Exception as err:
-                self.get_logger().warning(f'Failed to query lan status: {err}')
+                signal_json = band_json.get('signal')
+                signal = band.signal
+                signal.rssi = signal_json.get('rssi', 0)
+                signal.sinr = signal_json.get('sinr', 0.0)
+                signal.snr = signal_json.get('snr', 0.0)
+                signal.ecio = signal_json.get('ecio', 0.0)
+                signal.rsrp = signal_json.get('rsrp', 0)
+                signal.rsrq = signal_json.get('rsrq', 0.0)
+                signal.strength = signal_json.get('strength', 0)
 
-            self.lans_pub.publish(lans)
-            rate.sleep()
+                dest.append(band)
 
-    def navsat_thread_fn(self):
-        rate = self.create_rate(1)
+        def parse_gobi(cell_json, cell):
+            cell.network = cell_json.get('network', '')
+            cell.mobile_type = cell_json.get('mobileType', '')
+            cell.carrier_aggregation = cell_json.get('carrierAggregation', False)
+            cell.signal_level = cell_json.get('signalLevel', 0)
+            cell.imei = cell_json.get('imei', '')
+            cell.esn = cell_json.get('esn', '')
+            cell.mode = cell_json.get('mode', '')
+            cell.mcc = cell_json.get('mcc', '')
+            cell.mnc = cell_json.get('mnc', '')
+
+            parse_bands(cell_json.get('band', []), cell.band)
+
+            for rat_json in cell_json.get('rat', []):
+                rat = Rat()
+                rat.name = rat_json.get('name', '')
+                parse_bands(rat_json.get('band', []), rat.band)
+                cell.rat.append(rat)
+
+            roam_json = cell_json.get('roaming', {})
+            roam = cell.roaming
+            roam.code = roam_json.get('code', 0)
+            roam.message = roam_json.get('message', '')
+
+            sim_group_json = cell_json.get('sim', {})
+            order = sim_group_json.get('order', [])
+            for n in order:
+                sim_json = sim_group_json.get(f'{n}', {})
+                sim = Sim()
+                sim.status = sim_json.get('status', '')
+                sim.active = sim_json.get('active', False)
+                sim.apn = sim_json.get('apn', '')
+                sim.username = sim_json.get('username', '')
+                sim.password = sim_json.get('password', '')
+                sim.imsi = sim_json.get('imsi', '')
+                sim.iccid = sim_json.get('iccid', '')
+                sim.mtn = sim_json.get('mtn', '')
+
+                cell.sim.append(sim)
+
+            rsim_json = cell_json.get('remoteSim', {})
+            rsim = cell.remote_sim
+            rsim.imsi = rsim_json.get('imsi', '')
+            rsim.serial_no = rsim_json.get('serial_no', '')
+            rsim.slot = rsim_json.get('slot', 0)
+            rsim.auto_apn = rsim_json.get('autoApn', False)
+            rsim.apn = rsim_json.get('apn', '')
+            rsim.username = rsim_json.get('username', '')
+            rsim.password = rsim_json.get('password', '')
+
+            carrier_json = cell_json.get('carrier', {})
+            carrier = cell.carrier
+            carrier.name = carrier_json.get('name', '')
+            carrier.country = carrier_json.get('country', '')
+
+            meid_json = cell_json.get('meid', {})
+            meid = cell.meid
+            meid.hex = meid_json.get('hex', '')
+            meid.dec = meid_json.get('dec', '')
+
+            tower_json = cell_json.get('cellTower', {})
+            tower = cell.cell_tower
+            tower.id = tower_json.get('cellId', 0)
+            tower.plmn = tower_json.get('cellPlmn', 0)
+            tower.utranid = tower_json.get('cellUtranId', 0)
+            tower.tac = tower_json.get('tac', 0)
+            tower.lac = tower_json.get('lac', 0)
+
+        wans = WanList()
+        order = data['response']['order']
+        for n in order:
+            wan_json = data['response'][f'{n}']
+            wan = Wan()
+            wan.name = wan_json.get('name', '')
+            wan.led_color = wan_json.get('statusLed', '')
+            wan.as_lan = wan_json.get('asLan', False)
+            wan.enable = wan_json.get('enable', False)
+            wan.locked = wan_json.get('locked', False)
+            wan.scheduled_off = wan_json.get('scheduledOff', False)
+            wan.message = wan_json.get('message', '')
+            wan.uptime = wan_json.get('uptime', -1)
+            wan.type = wan_json.get('type', '')
+            wan.virtual_type = wan_json.get('virtualType', '')
+            wan.priority = wan_json.get('priority', 0)
+            wan.group_set = wan_json.get('groupSet', 0)
+            wan.ip_address = wan_json.get('ip', '')
+            wan.netmask = wan_json.get('mask', 0)
+            wan.gateway = wan_json.get('gateway', '')
+            wan.method = wan_json.get('method', '')
+            wan.mode = wan_json.get('mode', '')
+            wan.routing_mode = wan_json.get('routingMode', '')
+            for ip in wan_json.get('dns', []):
+                wan.dns.append(ip)
+            for ip in wan_json.get('additionalIp', []):
+                wan.additional_ip.append(ip)
+            wan.mtu = wan_json.get('mtu', 0)
+            wan.mss = wan_json.get('mss', 0)
+
+            allowance_json = wan_json.get('bandwidthAllowanceMonitor')
+            allowance = wan.allowance
+            allowance.enable = allowance_json.get('enable', False)
+            allowance.has_smtp = allowance_json.get('hasSmtp', False)
+            for action in allowance_json.get('action', []):
+                allowance_json.action.append(action)
+            allowance.start = allowance_json.get('start', 0)
+            allowance.value = allowance_json.get('monthlyAllowance', {}).get('value', 0.0)
+            allowance.unit = allowance_json.get('monthlyAllowance', {}).get('unit', 'MB')
+
+            # WAN over Wifi
+            wifi_json = wan_json.get('wireless', {})
+            signal_json = wifi_json.get('signal', {})
+            wifi = wan.wireless
+            wifi.essid = wifi_json.get('ssid', '')
+            wifi.bssid = wifi_json.get('bssid', '')
+            wifi.link_quality_raw = str(signal_json.get('strength', ''))
+            wifi.link_quality = signal_json.get('strength', 0.0)
+
+            # WAN over Modem
+            modem_json = wan_json.get('modem', {})
+            modem = wan.modem
+            modem.name = modem_json.get('name', '')
+            modem.vendor_id = modem_json.get('vendorId', 0)
+            modem.product_id = modem_json.get('productId', 0)
+            modem.manufacturer = modem_json.get('manufacturer', '')
+            modem.signal_level = modem_json.get('signalLevel', 0)
+            modem.network = modem_json.get('network', '')
+            modem.imsi = modem_json.get('imsi', '')
+            modem.iccid = modem_json.get('iccid', '')
+            modem.esn = modem_json.get('esn', '')
+            modem.mtn = modem_json.get('mtn', '')
+            modem.apn = modem_json.get('apn', '')
+            modem.username = modem_json.get('username', '')
+            modem.password = modem_json.get('password', '')
+            modem.dial_number = modem_json.get('dialNumber', '')
+            carrier_json = modem_json.get('carrier', {})
+            carrier = modem.carrier
+            carrier.name = carrier_json.get('name', '')
+            carrier.country = carrier_json.get('country', '')
+            parse_bands(modem_json.get('band', []), modem.band)
+
+            # WAN over cellular
+            parse_gobi(wan_json.get('cellular', {}), wan.cellular)
+
+            # WAN over gobi
+            parse_gobi(wan_json.get('gobi', {}), wan.gobi)
+
+            # add the WAN connection to the list
+            wans.wans.append(wan)
+
+        self.wans_pub.publish(wans)
+
+    def publish_gps(self, data):
         fix = NavSatFix()
-        while rclpy.ok():
-            get_url = f'https://{self.ip_address}/api/info.location'
-            try:
-                http_resp = self.session.get(
-                    get_url,
-                    headers=self.http_headers,
-                    verify=False,
-                )
-                data = json.loads(http_resp.content.decode())
-
-                self.get_logger().info(str(data))
-
-                if data['stat'] == 'fail':
-                    self.get_logger().warn('Failed to read GPS data')
-                    fix.latitude = math.nan
-                    fix.longitude = math.nan
-                    fix.altitude = math.nan
-                elif not data['response']['gps']:
-                    self.get_logger().warn('GPS data is invalid')
-                    fix.latitude = math.nan
-                    fix.longitude = math.nan
-                    fix.altitude = math.nan
-                else:
-                    fix.latitude = data['response']['location']['latitude']
-                    fix.longitude = data['response']['location']['longitude']
-                    fix.altitude = data['response']['location']['altitude']
-                fix.header.stamp = self.get_clock().now().to_msg()
-
-                self.navsat_fix_pub.publish(fix)
-            except Exception as err:
-                self.get_logger().warning(f'Failed to query location: {err}')
-
-            rate.sleep()
+        if data['stat'] == 'fail':
+            self.get_logger().warn('Failed to read GPS data')
+            fix.latitude = math.nan
+            fix.longitude = math.nan
+            fix.altitude = math.nan
+        elif not data['response']['gps']:
+            self.get_logger().warn('GPS data is invalid')
+            fix.latitude = math.nan
+            fix.longitude = math.nan
+            fix.altitude = math.nan
+        else:
+            fix.latitude = data['response']['location']['latitude']
+            fix.longitude = data['response']['location']['longitude']
+            fix.altitude = data['response']['location']['altitude']
+        fix.header.stamp = self.get_clock().now().to_msg()
+        self.navsat_fix_pub.publish(fix)
 
 
 def main(args=None):
