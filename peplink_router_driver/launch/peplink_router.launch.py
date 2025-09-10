@@ -53,7 +53,10 @@ ARGUMENTS = [
                           description='Login password for the router'),
     DeclareLaunchArgument('enable_gps', default_value='false',
                           description='Enable publishing GPS data from the router',
-                          choices=['false', 'true'])
+                          choices=['false', 'true']),
+    DeclareLaunchArgument('publish_passwords', default_value='false',
+                          description='Publish modem and SIM card passwords in ROS topics',
+                          choices=['false', 'true']),
 ]
 
 
@@ -63,6 +66,7 @@ def launch_setup(context, *args, **kwargs):
     username = LaunchConfiguration('username')
     password = LaunchConfiguration('password')
     enable_gps = LaunchConfiguration('enable_gps')
+    publish_passwords = LaunchConfiguration('publish_passwords')
 
     peplink_node = Node(
           name='peplink_router_node',
@@ -74,6 +78,7 @@ def launch_setup(context, *args, **kwargs):
               'username': username,
               'password': password,
               'enable_gps': enable_gps,
+              'publish_passwords': publish_passwords,
           }],
       )
 

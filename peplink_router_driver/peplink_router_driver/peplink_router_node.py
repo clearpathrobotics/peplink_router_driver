@@ -99,6 +99,10 @@ class PeplinkRouterNode(Node):
             'Content-Type': 'application/json',
         }
 
+    @property
+    def publish_passwords(self):
+        return self.publish_passwords_param.value
+
     def __init__(self, node_name):
         # We don't check the HTTPS certificate, as it's not always valid for the router's subnet
         # but this causes unnecessary warnings in the logs. To keep things tidy, turn off
@@ -123,6 +127,10 @@ class PeplinkRouterNode(Node):
         )
         self.enable_gps_param = self.declare_parameter(
             'enable_gps',
+            False,
+        )
+        self.publish_passwords_param = self.declare_parameter(
+            'publish_passwords',
             False,
         )
 
@@ -230,7 +238,10 @@ class PeplinkRouterNode(Node):
             "username": "{self.username}",
             "password": "{self.password}"
         }}""".encode()
-        self.get_logger().info(f'Logging in as user "{self.username}"...')
+        if self.publish_passwords:
+            self.get_logger().info(f'Logging in as user "{self.username}:{self.password}"...')
+        else:
+            self.get_logger().info(f'Logging in as user "{self.username}"...')
         try:
             http_resp = self.session.post(
                 url,
@@ -373,7 +384,10 @@ class PeplinkRouterNode(Node):
                 sim.active = sim_json.get('active', False)
                 sim.apn = sim_json.get('apn', '')
                 sim.username = sim_json.get('username', '')
-                sim.password = sim_json.get('password', '')
+                if self.publish_passwords:
+                    sim.password = sim_json.get('password', '')
+                else:
+                    sim.password = ''
                 sim.imsi = sim_json.get('imsi', '')
                 sim.iccid = sim_json.get('iccid', '')
                 sim.mtn = sim_json.get('mtn', '')
@@ -388,7 +402,10 @@ class PeplinkRouterNode(Node):
             rsim.auto_apn = rsim_json.get('autoApn', False)
             rsim.apn = rsim_json.get('apn', '')
             rsim.username = rsim_json.get('username', '')
-            rsim.password = rsim_json.get('password', '')
+            if self.publish_passwords:
+                rsim.password = rsim_json.get('password', '')
+            else:
+                rsim.password = ''
 
             carrier_json = cell_json.get('carrier', {})
             carrier = cell.carrier
@@ -472,7 +489,10 @@ class PeplinkRouterNode(Node):
             modem.mtn = modem_json.get('mtn', '')
             modem.apn = modem_json.get('apn', '')
             modem.username = modem_json.get('username', '')
-            modem.password = modem_json.get('password', '')
+            if self.publish_passwords:
+                modem.password = modem_json.get('password', '')
+            else:
+                modem.password = ''
             modem.dial_number = modem_json.get('dialNumber', '')
             carrier_json = modem_json.get('carrier', {})
             carrier = modem.carrier
