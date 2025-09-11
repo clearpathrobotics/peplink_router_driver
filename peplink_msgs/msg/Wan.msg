@@ -17,6 +17,7 @@ bool enable
 bool locked
 bool scheduled_off
 
+int32 id
 int32 uptime
 int32 priority
 int32 group_set

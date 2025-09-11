@@ -430,6 +430,7 @@ class PeplinkRouterNode(Node):
         for n in order:
             wan_json = data['response'][f'{n}']
             wan = Wan()
+            wan.id = n
             wan.name = wan_json.get('name', '')
             wan.led_color = wan_json.get('statusLed', '')
             wan.as_lan = wan_json.get('asLan', False)
