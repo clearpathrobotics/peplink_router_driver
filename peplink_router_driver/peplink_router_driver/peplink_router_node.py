@@ -36,7 +36,6 @@ import json
 import math
 import os
 import subprocess
-import threading
 
 from peplink_router_driver.periodic import PeriodicCheck
 
@@ -53,8 +52,12 @@ from peplink_msgs.msg import (
     Sim,
     Wan,
     WanList,
+    WanPriority,
 )
-from peplink_msgs.srv import GetFirmware
+from peplink_msgs.srv import (
+    GetFirmware,
+    SetWanPriority,
+)
 
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
@@ -153,6 +156,11 @@ class PeplinkRouterNode(Node):
             'get_firmware',
             self.get_firmware_handler,
         )
+        self.set_wan_priority_srv = self.create_service(
+            SetWanPriority,
+            'set_wan_priority',
+            self.set_wan_priority_handler,
+        )
 
         # Topic publishers
         self.clients_pub = self.create_publisher(
@@ -223,21 +231,31 @@ class PeplinkRouterNode(Node):
             cmd = f'ping -W 5 -c 1 {self.ip_address}'.split()
 
         self.get_logger().info(f'Waiting until {self.ip_address} is online...')
-        host_alive = subprocess.call(cmd) == 0  # noqa: S603
+        host_alive = subprocess.call(
+            cmd,
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ) == 0
         rate = self.create_rate(1)
         while not host_alive:
             rate.sleep()
-            host_alive = subprocess.call(cmd) == 0  # noqa: S603
+            host_alive = subprocess.call(
+                cmd,
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ) == 0
 
         self.get_logger().info(f'{self.ip_address} is now online')
 
     def login(self):
         success = True
         url = f'https://{self.ip_address}/api/login'
-        content = f"""{{
-            "username": "{self.username}",
-            "password": "{self.password}"
-        }}""".encode()
+        content = {
+            'username': self.username,
+            'password': self.password,
+        }
         if self.publish_passwords:
             self.get_logger().info(f'Logging in as user "{self.username}:{self.password}"...')
         else:
@@ -245,7 +263,7 @@ class PeplinkRouterNode(Node):
         try:
             http_resp = self.session.post(
                 url,
-                data=content,
+                data=json.dumps(content).encode(),
                 headers=self.http_headers,
                 verify=False,
             )
@@ -283,6 +301,48 @@ class PeplinkRouterNode(Node):
         except Exception as err:
             self.get_logger().warning(f'Error querying firmware: {err}')
             result.firmwares = []
+
+        return result
+
+    def set_wan_priority_handler(self, request, result):
+        post_url = f'https://{self.ip_address}/api/config.wan.priority'
+        content = {
+            'instantActive': request.instant_actve,
+            'list': []
+        }
+        for wan in request.connections:
+            conn = {
+                'connId': wan.connection_id,
+                'priority': wan.priority,
+                'group': wan.group,
+                'enable': wan.enable
+            }
+            content['list'].append(conn)
+
+        try:
+            http_resp = self.session.post(
+                post_url,
+                data=json.dumps(content).encode(),
+                headers=self.http_headers,
+                verify=False,
+            )
+            data = json.loads(http_resp.content.decode())
+
+            if data.get('code', 200) != 200:
+                raise Exception(f'HTTP Error {data.get("code", 200)}: {data.get("message", "no message")}')
+
+            order = data.get('response', {}).get('order', [])
+            for n in order:
+                wan_json = data.get('response', {}).get(f'{n}', {})
+                wan = WanPriority()
+                wan.name = wan_json.get('name', '')
+                wan.connection_id = n
+                wan.group = wan_json.get('group', 0)
+                wan.enable = wan_json.get('enable', False)
+
+                result.connections.append(wan)
+        except Exception as err:
+            self.get_logger().warning(f'Failed to set WAN priorities: {err}')
 
         return result
 

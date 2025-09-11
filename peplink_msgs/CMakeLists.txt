@@ -32,8 +32,10 @@ rosidl_generate_interfaces(
     msg/Sim.msg
     msg/Wan.msg
     msg/WanList.msg
+    msg/WanPriority.msg
 
     srv/GetFirmware.srv
+    srv/SetWanPriority.srv
 
     DEPENDENCIES wireless_msgs builtin_interfaces
 )
