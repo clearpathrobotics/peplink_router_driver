@@ -9,6 +9,11 @@ int32 signal_level
 peplink_msgs/Meid meid
 string imei
 string esn
+string eid
+string network_mode
+string manufacturer
+string model
+string firmware
 string mode
 peplink_msgs/Band[] band
 peplink_msgs/Rat[] rat
