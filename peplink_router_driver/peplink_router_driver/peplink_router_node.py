@@ -37,6 +37,7 @@ import math
 import os
 import subprocess
 
+from peplink_router_driver.checker import Authentication, PeplinkCheck
 from peplink_router_driver.periodic import PeriodicCheck
 
 from peplink_msgs.msg import (
@@ -63,8 +64,6 @@ import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-
-import requests
 
 from sensor_msgs.msg import NavSatFix
 
@@ -138,17 +137,14 @@ class PeplinkRouterNode(Node):
         )
 
         # web connection management
-        self.session = requests.Session()
+        self.authentication = Authentication(
+            self,
+            self.ip_address,
+            self.username,
+            self.password
+        )
         self.wait_for_host()
-        n_tries = 0
-        max_tries = 3
-        logged_in = False
-        while n_tries < max_tries and not logged_in:
-            n_tries += 1
-            logged_in = self.login()
-        if not logged_in:
-            self.get_logger().info(f'Login failed after {max_tries} attempts. Some features may be disabled')
-
+        self.authentication.login()
 
         # Service servers
         self.get_firmware_srv = self.create_service(
@@ -186,18 +182,21 @@ class PeplinkRouterNode(Node):
                 f'https://{self.ip_address}/api/status.client?connectionType=ethernet wireless',
                 1.0,
                 self.publish_clients,
+                self.authentication,
             ),
             PeriodicCheck(
                 self,
                 f'https://{self.ip_address}/api/status.lan.profile',
                 1.0,
                 self.publish_lans,
+                self.authentication,
             ),
             PeriodicCheck(
                 self,
                 f'https://{self.ip_address}/api/status.wan.connection',
                 1.0,
                 self.publish_wans,
+                self.authentication,
             ),
         ]
 
@@ -233,7 +232,6 @@ class PeplinkRouterNode(Node):
         self.get_logger().info(f'Waiting until {self.ip_address} is online...')
         host_alive = subprocess.call(
             cmd,
-            shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ) == 0
@@ -242,70 +240,39 @@ class PeplinkRouterNode(Node):
             rate.sleep()
             host_alive = subprocess.call(
                 cmd,
-                shell=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             ) == 0
 
         self.get_logger().info(f'{self.ip_address} is now online')
 
-    def login(self):
-        success = True
-        url = f'https://{self.ip_address}/api/login'
-        content = {
-            'username': self.username,
-            'password': self.password,
-        }
-        if self.publish_passwords:
-            self.get_logger().info(f'Logging in as user "{self.username}:{self.password}"...')
-        else:
-            self.get_logger().info(f'Logging in as user "{self.username}"...')
-        try:
-            http_resp = self.session.post(
-                url,
-                data=json.dumps(content).encode(),
-                headers=self.http_headers,
-                verify=False,
-            )
-            data = json.loads(http_resp.content.decode())
-            if data['stat'] != 'ok':
-                success = False
-                self.get_logger().warn('Login failed')
-            else:
-                self.get_logger().info('Login succeeded')
-
-        except Exception as err:
-            self.get_logger().error(f'Login failed with error: {err}')
-            success = False
-
-        return success
-
     def get_firmware_handler(self, request, result):
-        get_url = f'https://{self.ip_address}/api/info.firmware'
-        try:
-            http_resp = self.session.get(
-                get_url,
-                headers=self.http_headers,
-                verify=False,
-            )
-            data = json.loads(http_resp.content.decode())
+        checker = PeplinkCheck(
+            self,
+            f'https://{self.ip_address}/api/info.firmware',
+            self.authentication,
+        )
+        data = checker.get_json()
+        order = data.get('response', {}).get('order', [])
+        for n in order:
+            fw_json = data.get('response', {}).get(f'{n}', {})
+            fw = Firmware()
+            fw.version = fw_json.get('version', '')
+            fw.bootable = fw_json.get('bootable', False)
+            fw.in_use = fw_json.get('inUse', False)
+            result.firmwares.append(fw)
 
-            order = data['response']['order']
-            for n in order:
-                fw_json = data['response'][f'{n}']
-                fw = Firmware()
-                fw.version = fw_json['version']
-                fw.bootable = fw_json['bootable']
-                fw.in_use = fw_json['inUse']
-                result.firmwares.append(fw)
-        except Exception as err:
-            self.get_logger().warning(f'Error querying firmware: {err}')
-            result.firmwares = []
+        result.stat.code = data.get('code', 200)
+        result.stat.stat = data.get('stat', '')
+        result.stat.message = data.get('message', '')
 
         return result
 
     def set_wan_priority_handler(self, request, result):
-        post_url = f'https://{self.ip_address}/api/config.wan.priority'
+        checker = PeplinkCheck(
+            self,
+            f'https://{self.ip_address}/api/config.wan.priority'
+        )
         content = {
             'instantActive': request.instant_actve,
             'list': []
@@ -319,36 +286,31 @@ class PeplinkRouterNode(Node):
             }
             content['list'].append(conn)
 
-        try:
-            http_resp = self.session.post(
-                post_url,
-                data=json.dumps(content).encode(),
-                headers=self.http_headers,
-                verify=False,
-            )
-            data = json.loads(http_resp.content.decode())
+        data = checker.post_json(content)
+        order = data.get('response', {}).get('order', [])
+        for n in order:
+            wan_json = data.get('response', {}).get(f'{n}', {})
+            wan = WanPriority()
+            wan.name = wan_json.get('name', '')
+            wan.connection_id = n
+            wan.group = wan_json.get('group', 0)
+            wan.enable = wan_json.get('enable', False)
 
-            if data.get('code', 200) != 200:
-                raise Exception(f'HTTP Error {data.get("code", 200)}: {data.get("message", "no message")}')
+            result.connections.append(wan)
 
-            order = data.get('response', {}).get('order', [])
-            for n in order:
-                wan_json = data.get('response', {}).get(f'{n}', {})
-                wan = WanPriority()
-                wan.name = wan_json.get('name', '')
-                wan.connection_id = n
-                wan.group = wan_json.get('group', 0)
-                wan.enable = wan_json.get('enable', False)
-
-                result.connections.append(wan)
-        except Exception as err:
-            self.get_logger().warning(f'Failed to set WAN priorities: {err}')
+        result.stat.code = data.get('code', 200)
+        result.stat.stat = data.get('stat', '')
+        result.stat.message = data.get('message', '')
 
         return result
 
     def publish_clients(self, data):
         clients = ClientList()
-        for client_json in data['response']['list']:
+        clients.stat.code = data.get('code', 200)
+        clients.stat.stat = data.get('stat', '')
+        clients.stat.message = data.get('message', '')
+
+        for client_json in data.get('response', {}).get('list', []):
             client = Client()
             client.ip_address = client_json.get('ip', '')
             client.connection_type = client_json.get('connectionType', 'other')
@@ -381,9 +343,13 @@ class PeplinkRouterNode(Node):
 
     def publish_lans(self, data):
         lans = LanList()
-        order = data['response']['order']
+        lans.stat.code = data.get('code', 200)
+        lans.stat.stat = data.get('stat', '')
+        lans.stat.message = data.get('message', '')
+
+        order = data.get('response', {}).get('order', [])
         for n in order:
-            lan_json = data['response'][f'{n}']
+            lan_json = data.get('response', {}).get(f'{n}', {})
             lan = Lan()
             lan.name = lan_json.get('name', '')
             lan.vlan_id = lan_json.get('vlanId', 0)
@@ -486,89 +452,98 @@ class PeplinkRouterNode(Node):
             tower.lac = tower_json.get('lac', 0)
 
         wans = WanList()
-        order = data['response']['order']
-        for n in order:
-            wan_json = data['response'][f'{n}']
-            wan = Wan()
-            wan.id = n
-            wan.name = wan_json.get('name', '')
-            wan.led_color = wan_json.get('statusLed', '')
-            wan.as_lan = wan_json.get('asLan', False)
-            wan.enable = wan_json.get('enable', False)
-            wan.locked = wan_json.get('locked', False)
-            wan.scheduled_off = wan_json.get('scheduledOff', False)
-            wan.message = wan_json.get('message', '')
-            wan.uptime = wan_json.get('uptime', -1)
-            wan.type = wan_json.get('type', '')
-            wan.virtual_type = wan_json.get('virtualType', '')
-            wan.priority = wan_json.get('priority', 0)
-            wan.group_set = wan_json.get('groupSet', 0)
-            wan.ip_address = wan_json.get('ip', '')
-            wan.netmask = wan_json.get('mask', 0)
-            wan.gateway = wan_json.get('gateway', '')
-            wan.method = wan_json.get('method', '')
-            wan.mode = wan_json.get('mode', '')
-            wan.routing_mode = wan_json.get('routingMode', '')
-            for ip in wan_json.get('dns', []):
-                wan.dns.append(ip)
-            for ip in wan_json.get('additionalIp', []):
-                wan.additional_ip.append(ip)
-            wan.mtu = wan_json.get('mtu', 0)
-            wan.mss = wan_json.get('mss', 0)
+        wans.stat.code = data.get('code', 200)
+        wans.stat.stat = data.get('stat', '')
+        wans.stat.message = data.get('message', '')
 
-            allowance_json = wan_json.get('bandwidthAllowanceMonitor')
-            allowance = wan.allowance
-            allowance.enable = allowance_json.get('enable', False)
-            allowance.has_smtp = allowance_json.get('hasSmtp', False)
-            for action in allowance_json.get('action', []):
-                allowance_json.action.append(action)
-            allowance.start = allowance_json.get('start', 0)
-            allowance.value = allowance_json.get('monthlyAllowance', {}).get('value', 0.0)
-            allowance.unit = allowance_json.get('monthlyAllowance', {}).get('unit', 'MB')
+        try:
+            order = data.get('response', {}).get('order', [])
+            for n in order:
+                wan_json = data.get('response', {}).get(f'{n}', {})
+                wan = Wan()
+                wan.id = n
+                wan.name = wan_json.get('name', '')
+                wan.led_color = wan_json.get('statusLed', '')
+                wan.as_lan = wan_json.get('asLan', False)
+                wan.enable = wan_json.get('enable', False)
+                wan.locked = wan_json.get('locked', False)
+                wan.scheduled_off = wan_json.get('scheduledOff', False)
+                wan.message = wan_json.get('message', '')
+                wan.uptime = wan_json.get('uptime', -1)
+                wan.type = wan_json.get('type', '')
+                wan.virtual_type = wan_json.get('virtualType', '')
+                wan.priority = wan_json.get('priority', 0)
+                wan.group_set = wan_json.get('groupSet', 0)
+                wan.ip_address = wan_json.get('ip', '')
+                wan.netmask = wan_json.get('mask', 0)
+                wan.gateway = wan_json.get('gateway', '')
+                wan.method = wan_json.get('method', '')
+                wan.mode = wan_json.get('mode', '')
+                wan.routing_mode = wan_json.get('routingMode', '')
+                for ip in wan_json.get('dns', []):
+                    wan.dns.append(ip)
+                for ip in wan_json.get('additionalIp', []):
+                    wan.additional_ip.append(ip)
+                wan.mtu = wan_json.get('mtu', 0)
+                wan.mss = wan_json.get('mss', 0)
 
-            # WAN over Wifi
-            wifi_json = wan_json.get('wireless', {})
-            signal_json = wifi_json.get('signal', {})
-            wifi = wan.wireless
-            wifi.essid = wifi_json.get('ssid', '')
-            wifi.bssid = wifi_json.get('bssid', '')
-            wifi.link_quality_raw = str(signal_json.get('strength', ''))
-            wifi.link_quality = signal_json.get('strength', 0.0)
+                allowance_json = wan_json.get('bandwidthAllowanceMonitor', {})
+                allowance = wan.allowance
+                allowance.enable = allowance_json.get('enable', False)
+                allowance.has_smtp = allowance_json.get('hasSmtp', False)
+                for action in allowance_json.get('action', []):
+                    allowance_json.action.append(action)
+                allowance.start = allowance_json.get('start', 0)
+                allowance.value = allowance_json.get('monthlyAllowance', {}).get('value', 0.0)
+                allowance.unit = allowance_json.get('monthlyAllowance', {}).get('unit', 'MB')
 
-            # WAN over Modem
-            modem_json = wan_json.get('modem', {})
-            modem = wan.modem
-            modem.name = modem_json.get('name', '')
-            modem.vendor_id = modem_json.get('vendorId', 0)
-            modem.product_id = modem_json.get('productId', 0)
-            modem.manufacturer = modem_json.get('manufacturer', '')
-            modem.signal_level = modem_json.get('signalLevel', 0)
-            modem.network = modem_json.get('network', '')
-            modem.imsi = modem_json.get('imsi', '')
-            modem.iccid = modem_json.get('iccid', '')
-            modem.esn = modem_json.get('esn', '')
-            modem.mtn = modem_json.get('mtn', '')
-            modem.apn = modem_json.get('apn', '')
-            modem.username = modem_json.get('username', '')
-            if self.publish_passwords:
-                modem.password = modem_json.get('password', '')
-            else:
-                modem.password = ''
-            modem.dial_number = modem_json.get('dialNumber', '')
-            carrier_json = modem_json.get('carrier', {})
-            carrier = modem.carrier
-            carrier.name = carrier_json.get('name', '')
-            carrier.country = carrier_json.get('country', '')
-            parse_bands(modem_json.get('band', []), modem.band)
+                # WAN over Wifi
+                wifi_json = wan_json.get('wireless', {})
+                signal_json = wifi_json.get('signal', {})
+                wifi = wan.wireless
+                wifi.essid = wifi_json.get('ssid', '')
+                wifi.bssid = wifi_json.get('bssid', '')
+                wifi.link_quality_raw = str(signal_json.get('strength', ''))
+                wifi.link_quality = signal_json.get('strength', 0.0)
 
-            # WAN over cellular
-            parse_gobi(wan_json.get('cellular', {}), wan.cellular)
+                # WAN over Modem
+                modem_json = wan_json.get('modem', {})
+                modem = wan.modem
+                modem.name = modem_json.get('name', '')
+                modem.vendor_id = modem_json.get('vendorId', 0)
+                modem.product_id = modem_json.get('productId', 0)
+                modem.manufacturer = modem_json.get('manufacturer', '')
+                modem.signal_level = modem_json.get('signalLevel', 0)
+                modem.network = modem_json.get('network', '')
+                modem.imsi = modem_json.get('imsi', '')
+                modem.iccid = modem_json.get('iccid', '')
+                modem.esn = modem_json.get('esn', '')
+                modem.mtn = modem_json.get('mtn', '')
+                modem.apn = modem_json.get('apn', '')
+                modem.username = modem_json.get('username', '')
+                if self.publish_passwords:
+                    modem.password = modem_json.get('password', '')
+                else:
+                    modem.password = ''
+                modem.dial_number = modem_json.get('dialNumber', '')
+                carrier_json = modem_json.get('carrier', {})
+                carrier = modem.carrier
+                carrier.name = carrier_json.get('name', '')
+                carrier.country = carrier_json.get('country', '')
+                parse_bands(modem_json.get('band', []), modem.band)
 
-            # WAN over gobi
-            parse_gobi(wan_json.get('gobi', {}), wan.gobi)
+                # WAN over cellular
+                parse_gobi(wan_json.get('cellular', {}), wan.cellular)
 
-            # add the WAN connection to the list
-            wans.wans.append(wan)
+                # WAN over gobi
+                parse_gobi(wan_json.get('gobi', {}), wan.gobi)
+
+                # add the WAN connection to the list
+                wans.wans.append(wan)
+        except Exception as err:
+            self.get_logger().warning(f'Failed to parse WANs: {err}')
+            import traceback
+            self.get_logger().warning(f'{traceback.format_exc()}')
 
         self.wans_pub.publish(wans)
 
@@ -579,15 +554,16 @@ class PeplinkRouterNode(Node):
             fix.latitude = math.nan
             fix.longitude = math.nan
             fix.altitude = math.nan
-        elif not data['response']['gps']:
+        elif not data.get('response', {}).get('gps', False):
             self.get_logger().warn('GPS data is invalid')
             fix.latitude = math.nan
             fix.longitude = math.nan
             fix.altitude = math.nan
         else:
-            fix.latitude = data['response']['location']['latitude']
-            fix.longitude = data['response']['location']['longitude']
-            fix.altitude = data['response']['location']['altitude']
+            gps_json = data.get('response', {}).get('location', {})
+            fix.latitude = gps_json.get('latitude', math.nan)
+            fix.longitude = gps_json.get('longitude', math.nan)
+            fix.altitude = gps_json.get('altitude', math.nan)
         fix.header.stamp = self.get_clock().now().to_msg()
         self.navsat_fix_pub.publish(fix)
 

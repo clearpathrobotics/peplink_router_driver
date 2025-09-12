@@ -30,6 +30,7 @@ rosidl_generate_interfaces(
     msg/Roaming.msg
     msg/Signal.msg
     msg/Sim.msg
+    msg/Stat.msg
     msg/Wan.msg
     msg/WanList.msg
     msg/WanPriority.msg

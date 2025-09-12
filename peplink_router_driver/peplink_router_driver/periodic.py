@@ -32,13 +32,17 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-import json
+from peplink_router_driver.checker import(
+    Authentication,
+    PeplinkCheck,
+)
+
 import threading
 
 import rclpy
 
 
-class PeriodicCheck:
+class PeriodicCheck(PeplinkCheck):
     """
     Calls an endpoint on the Peplink router at regular intervals.
 
@@ -48,6 +52,7 @@ class PeriodicCheck:
     :param url: The complete URL to GET
     :param rate: The update rate in Hz
     :param callback: A function to send the HTTP response body to. Must accept a dict object as the argument
+    :param authentication:  Login credentials if this enpoint requires them
     """
 
     def __init__(
@@ -56,25 +61,18 @@ class PeriodicCheck:
         url: str,
         rate: float,
         callback: callable,
+        authentication: Authentication=None,
     ):
+        super().__init__(
+            nh,
+            url,
+            authentication,
+        )
         self.callback = callback
-        self.url = url
-        self.nh = nh
         self.rate = rate
 
         self.thread = threading.Thread(target=self.run_in_background)
         self.thread.start()
-
-    def get_json(self):
-        http_resp = self.nh.session.get(
-                    self.url,
-            headers=self.nh.http_headers,
-            verify=False,
-        )
-        json_data = json.loads(http_resp.content.decode())
-        # self.nh.get_logger().debug(f'{json_data}')
-        return json_data
-
 
     def run_in_background(self):
         rate = self.nh.create_rate(self.rate)
@@ -82,10 +80,6 @@ class PeriodicCheck:
         while rclpy.ok():
             try:
                 json_data = self.get_json()
-                if json_data.get('code', 200) == 401:
-                    self.nh.get_logger().warn(f'Authentication failed for {self.url}. Reauthenticating and trying again')
-                    self.nh.login()
-                    json_data = self.get_json()
                 self.callback(json_data)
 
             except Exception as err:
