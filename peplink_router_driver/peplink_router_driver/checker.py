@@ -33,11 +33,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import json
-import threading
 
-import rclpy
 import requests
-import urllib3
 
 
 class Authentication:
@@ -50,7 +47,8 @@ class Authentication:
     :param password:  The login password
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         nh,
         ip_address: str,
         username: str,
@@ -113,13 +111,13 @@ class PeplinkCheck:
         self,
         nh,
         url: str,
-        authentication: Authentication=None,
+        authentication: Authentication = None,
     ):
         self.url = url
         self.nh = nh
         self.authentication = authentication
 
-    def get_json(self, retry_auth: bool=True) -> dict:
+    def get_json(self, retry_auth: bool = True) -> dict:
         """
         Call the enpoint and return a dict representing the JSON response.
 
@@ -134,7 +132,7 @@ class PeplinkCheck:
             )
             json_data = json.loads(http_resp.content.decode())
             if retry_auth and json_data.get('code', 200) == 401:
-                self.nh.get_logger().warning(f'Failed to fetch data from {self.url}. Reauthenticating.')
+                self.nh.get_logger().warning(f'Failed to fetch data from {self.url}. Reauthenticating.')  # noqa: E501
                 self.authentication.login()
                 json_data = self.get_json(retry_auth=False)
         else:
@@ -147,7 +145,7 @@ class PeplinkCheck:
 
         return json_data
 
-    def post_json(self, payload: dict, retry_auth: bool=True) -> dict:
+    def post_json(self, payload: dict, retry_auth: bool = True) -> dict:
         """
         Call the enpoint and return a dict representing the JSON response.
 
@@ -164,7 +162,7 @@ class PeplinkCheck:
             )
             json_data = json.loads(http_resp.content.decode())
             if retry_auth and json_data.get('code', 200) == 401:
-                self.nh.get_logger().warning(f'Failed to fetch data from {self.url}. Reauthenticating.')
+                self.nh.get_logger().warning(f'Failed to fetch data from {self.url}. Reauthenticating.')  # noqa: E501
                 self.authentication.login()
                 json_data = self.post_json(payload, retry_auth=False)
         else:

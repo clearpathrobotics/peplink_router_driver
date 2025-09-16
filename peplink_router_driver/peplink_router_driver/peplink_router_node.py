@@ -32,13 +32,9 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-import json
 import math
 import os
 import subprocess
-
-from peplink_router_driver.checker import Authentication, PeplinkCheck
-from peplink_router_driver.periodic import PeriodicCheck
 
 from peplink_msgs.msg import (
     Band,
@@ -55,6 +51,7 @@ from peplink_msgs.msg import (
     WanList,
     WanPriority,
 )
+
 from peplink_msgs.srv import (
     GetFirmware,
     SetWanPriority,
@@ -70,6 +67,10 @@ from sensor_msgs.msg import NavSatFix
 import urllib3
 
 from wireless_msgs.msg import Connection
+
+from peplink_router_driver.checker import Authentication, PeplinkCheck
+from peplink_router_driver.periodic import PeriodicCheck
+
 
 class PeplinkRouterNode(Node):
     """
@@ -329,9 +330,9 @@ class PeplinkRouterNode(Node):
             client.wifi_connection.bssid = client_json.get('bssid', '')
             client.wifi_connection.txpower = client_json.get('signalStrength', {}).get('value', 0)
             client.wifi_connection.signal_level = client_json.get('signal', {}).get('strength', 0)
-            client.wifi_connection.bitrate = (client.bandwidth.download + client.bandwidth.upload) / 2.0
-            client.wifi_connection.link_quality = client_json.get('signal', {}).get('level', 0) / 5.0
-            client.wifi_connection.link_quality_raw = str(client_json.get('signal', {}).get('level', 0))
+            client.wifi_connection.bitrate = (client.bandwidth.download + client.bandwidth.upload) / 2.0  # noqa: E501
+            client.wifi_connection.link_quality = client_json.get('signal', {}).get('level', 0) / 5.0  # noqa: E501
+            client.wifi_connection.link_quality_raw = str(client_json.get('signal', {}).get('level', 0))  # noqa: E501
 
             client.lease = Lease()
             client.lease.expires_in = client_json.get('lease', {}).get('expiresIn', 0)

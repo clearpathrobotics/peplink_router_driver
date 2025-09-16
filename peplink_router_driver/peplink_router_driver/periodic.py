@@ -32,14 +32,14 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-from peplink_router_driver.checker import(
-    Authentication,
-    PeplinkCheck,
-)
-
 import threading
 
 import rclpy
+
+from peplink_router_driver.checker import (
+    Authentication,
+    PeplinkCheck,
+)
 
 
 class PeriodicCheck(PeplinkCheck):
@@ -51,7 +51,8 @@ class PeriodicCheck(PeplinkCheck):
     :param nh: The PeplinkRouterNode that owns this checker
     :param url: The complete URL to GET
     :param rate: The update rate in Hz
-    :param callback: A function to send the HTTP response body to. Must accept a dict object as the argument
+    :param callback: A function to send the HTTP response body to. Must accept a
+                     dict object as the argument
     :param authentication:  Login credentials if this enpoint requires them
     """
 
@@ -61,7 +62,7 @@ class PeriodicCheck(PeplinkCheck):
         url: str,
         rate: float,
         callback: callable,
-        authentication: Authentication=None,
+        authentication: Authentication = None,
     ):
         super().__init__(
             nh,
