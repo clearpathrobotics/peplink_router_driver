@@ -258,6 +258,7 @@ class PeplinkRouterNode(Node):
         for n in order:
             fw_json = data.get('response', {}).get(f'{n}', {})
             fw = Firmware()
+            fw.id = n
             fw.version = fw_json.get('version', '')
             fw.bootable = fw_json.get('bootable', False)
             fw.in_use = fw_json.get('inUse', False)
@@ -280,7 +281,7 @@ class PeplinkRouterNode(Node):
         }
         for wan in request.connections:
             conn = {
-                'connId': wan.connection_id,
+                'connId': wan.id,
                 'priority': wan.priority,
                 'group': wan.group,
                 'enable': wan.enable
@@ -293,7 +294,7 @@ class PeplinkRouterNode(Node):
             wan_json = data.get('response', {}).get(f'{n}', {})
             wan = WanPriority()
             wan.name = wan_json.get('name', '')
-            wan.connection_id = n
+            wan.id = n
             wan.group = wan_json.get('group', 0)
             wan.enable = wan_json.get('enable', False)
 
@@ -352,6 +353,7 @@ class PeplinkRouterNode(Node):
         for n in order:
             lan_json = data.get('response', {}).get(f'{n}', {})
             lan = Lan()
+            lan.id = n
             lan.name = lan_json.get('name', '')
             lan.vlan_id = lan_json.get('vlanId', 0)
             lan.ip_address = lan_json.get('ip', '')
@@ -412,6 +414,7 @@ class PeplinkRouterNode(Node):
             for n in order:
                 sim_json = sim_group_json.get(f'{n}', {})
                 sim = Sim()
+                sim.id = n
                 sim.status = sim_json.get('status', '')
                 sim.active = sim_json.get('active', False)
                 sim.apn = sim_json.get('apn', '')

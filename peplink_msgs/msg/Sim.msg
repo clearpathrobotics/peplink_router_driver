@@ -1,5 +1,6 @@
-string status
+int32 id
 bool active
+string status
 string apn
 string username
 string password
