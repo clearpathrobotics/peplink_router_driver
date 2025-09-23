@@ -175,6 +175,21 @@ class PeplinkRouterNode(Node):
             'wans',
             qos_profile=qos_profile_sensor_data,
         )
+        self.wifi_24g_signal_pub = self.create_publisher(
+            Connection,
+            'connection/wifi_24g',
+            qos_profile=qos_profile_sensor_data,
+        )
+        self.wifi_5g_signal_pub = self.create_publisher(
+            Connection,
+            'connection/wifi_5g',
+            qos_profile=qos_profile_sensor_data,
+        )
+        self.cellular_signal_pub = self.create_publisher(
+            Connection,
+            'connection/cellular',
+            qos_profile=qos_profile_sensor_data,
+        )
 
         # Periodic checkers
         self.periodic_checks = [
@@ -460,6 +475,9 @@ class PeplinkRouterNode(Node):
             tower.tac = tower_json.get('tac', 0)
             tower.lac = tower_json.get('lac', 0)
 
+        # import json
+        # self.get_logger().info(json.dumps(data))
+
         wans = WanList()
         wans.stat.code = data.get('code', 200)
         wans.stat.stat = data.get('stat', '')
@@ -507,7 +525,7 @@ class PeplinkRouterNode(Node):
                 allowance.unit = allowance_json.get('monthlyAllowance', {}).get('unit', 'MB')
 
                 # WAN over Wifi
-                wifi_json = wan_json.get('wireless', {})
+                wifi_json = wan_json.get('wifi', {})
                 signal_json = wifi_json.get('signal', {})
                 wifi = wan.wireless
                 wifi.essid = wifi_json.get('ssid', '')
@@ -549,6 +567,16 @@ class PeplinkRouterNode(Node):
 
                 # add the WAN connection to the list
                 wans.wans.append(wan)
+
+                # check for specific connections that get their own topics
+                if wan.type == 'wifi':
+                    if '2.4 GHz' in wan.name and 'Connected' in wan.message:
+                        self.wifi_24g_signal_pub.publish(wan.wireless)
+                    elif '5 GHz' in wan.name and 'Connected' in wan.message:
+                        self.wifi_5g_signal_pub.publish(wan.wireless)
+                elif wan.type == 'cellular':
+                    if 'Connected' in wan.message:
+                        self.cellular_signal_pub.publish(wan.wireless)
         except Exception as err:
             self.get_logger().warning(f'Failed to parse WANs: {err}')
             import traceback
