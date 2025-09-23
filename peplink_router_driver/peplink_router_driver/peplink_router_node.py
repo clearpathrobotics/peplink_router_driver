@@ -531,7 +531,7 @@ class PeplinkRouterNode(Node):
                 wifi.essid = wifi_json.get('ssid', '')
                 wifi.bssid = wifi_json.get('bssid', '')
                 wifi.link_quality_raw = str(signal_json.get('strength', ''))
-                wifi.link_quality = signal_json.get('strength', 0.0)
+                wifi.link_quality = float(signal_json.get('strength', 0.0)) / 100.0
 
                 # WAN over Modem
                 modem_json = wan_json.get('modem', {})
