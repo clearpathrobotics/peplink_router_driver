@@ -530,8 +530,13 @@ class PeplinkRouterNode(Node):
                 wifi = wan.wireless
                 wifi.essid = wifi_json.get('ssid', '')
                 wifi.bssid = wifi_json.get('bssid', '')
-                wifi.link_quality_raw = str(signal_json.get('strength', ''))
-                wifi.link_quality = float(signal_json.get('strength', 0.0)) / 100.0
+                wifi.signal_level = signal_json.get('strength', 0)  # dBm
+                wifi.link_quality_raw = str(signal_json.get('level', ''))
+                wifi.link_quality = float(signal_json.get('level', 0))
+                if '2.4 GHz' in wan.name:
+                    wifi.frequency = 2.4
+                elif '5 GHz' in wan.name:
+                    wifi.frequency = 5.0
 
                 # WAN over Modem
                 modem_json = wan_json.get('modem', {})
