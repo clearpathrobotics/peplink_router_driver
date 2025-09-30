@@ -2,6 +2,6 @@
 Changelog for package peplink_router_driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.0.1 (2025-09-30)
+------------------
 - Initial release
