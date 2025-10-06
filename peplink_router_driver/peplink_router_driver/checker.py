@@ -131,10 +131,17 @@ class PeplinkCheck:
                 verify=False,
             )
             json_data = json.loads(http_resp.content.decode())
-            if retry_auth and json_data.get('code', 200) == 401:
+            http_code = json_data.get('code', 200)
+            if retry_auth and http_code == 401:
                 self.nh.get_logger().warning(f'Failed to fetch data from {self.url}. Reauthenticating.')  # noqa: E501
-                self.authentication.login()
+                self.nh.diagnostics['Authenticated'] = False
+                self.nh.diagnostics['Authenticated'] = self.authentication.login()
                 json_data = self.get_json(retry_auth=False)
+            elif http_code == 404:
+                self.nh.get_logger().warning(f'Failed locate {self.url}')
+                self.nh.diagnostics['Alive'] = False
+            else:
+                self.nh.diagnostics['Alive'] = True
         else:
             http_resp = requests.get(
                 self.url,
@@ -142,6 +149,13 @@ class PeplinkCheck:
                 verify=False,
             )
             json_data = json.loads(http_resp.content.decode())
+
+            http_code = json_data.get('code', 200)
+            if http_code == 404:
+                self.nh.get_logger().warning(f'Failed locate {self.url}')
+                self.nh.diagnostics['Alive'] = False
+            else:
+                self.nh.diagnostics['Alive'] = True
 
         return json_data
 
@@ -161,10 +175,17 @@ class PeplinkCheck:
                 verify=False,
             )
             json_data = json.loads(http_resp.content.decode())
-            if retry_auth and json_data.get('code', 200) == 401:
+            http_code = json_data.get('code', 200)
+            if retry_auth and http_code == 401:
                 self.nh.get_logger().warning(f'Failed to fetch data from {self.url}. Reauthenticating.')  # noqa: E501
-                self.authentication.login()
+                self.nh.diagnostics['Authenticated'] = False
+                self.nh.diagnostics['Authenticated'] = self.authentication.login()
                 json_data = self.post_json(payload, retry_auth=False)
+            elif http_code == 404:
+                self.nh.get_logger().warning(f'Failed locate {self.url}')
+                self.nh.diagnostics['Alive'] = False
+            else:
+                self.nh.diagnostics['Alive'] = True
         else:
             http_resp = requests.post(
                 self.url,
@@ -173,5 +194,12 @@ class PeplinkCheck:
                 verify=False,
             )
             json_data = json.loads(http_resp.content.decode())
+
+            http_code = json_data.get('code', 200)
+            if http_code == 404:
+                self.nh.get_logger().warning(f'Failed locate {self.url}')
+                self.nh.diagnostics['Alive'] = False
+            else:
+                self.nh.diagnostics['Alive'] = True
 
         return json_data
