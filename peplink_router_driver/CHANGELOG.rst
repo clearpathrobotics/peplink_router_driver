@@ -2,8 +2,8 @@
 Changelog for package peplink_router_driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.0.2 (2025-10-07)
+------------------
 * Add initial diagnostics
 * Contributors: Chris Iverach-Brereton
 
