@@ -36,6 +36,7 @@ from collections import OrderedDict
 import math
 import os
 import subprocess
+import sys
 
 from diagnostic_msgs.msg import (
     DiagnosticStatus
@@ -123,15 +124,15 @@ class PeplinkRouterNode(Node):
         # See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#tls-warnings
         urllib3.disable_warnings()
 
-        super().__init__(node_name=node_name)
+        super().__init__(node_name=node_name, cli_args=sys.argv)
 
         self.diagnostics = OrderedDict()
 
         self.updater = Updater(self, 1.0)
-        self.updater.setHardwareID(f'peplink ({node_name})')
+        self.updater.setHardwareID(f'peplink ({self.get_name()})')
 
         self.updater.add(
-            node_name.replace('_node', '').replace('_', ' ').title(),
+            self.get_name().replace('_node', '').replace('_', ' ').title(),
             self.generate_diagnostics,
         )
 
@@ -682,8 +683,8 @@ class PeplinkRouterNode(Node):
         self.navsat_fix_pub.publish(fix)
 
 
-def main(args=None):
-    rclpy.init()
+def main():
+    rclpy.init(args=sys.argv)
 
     node_name = 'peplink_router_node'
     executor = MultiThreadedExecutor()

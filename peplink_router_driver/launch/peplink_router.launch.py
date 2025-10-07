@@ -69,7 +69,7 @@ def launch_setup(context, *args, **kwargs):
     publish_passwords = LaunchConfiguration('publish_passwords')
 
     peplink_node = Node(
-          name='peplink_router_node',
+          name='peplink_node',
           package='peplink_router_driver',
           executable='peplink_router_node',
           output='screen',
