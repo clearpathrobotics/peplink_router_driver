@@ -116,7 +116,7 @@ class PeplinkRouterNode(Node):
     def publish_passwords(self):
         return self.publish_passwords_param.value
 
-    def __init__(self, node_name):
+    def __init__(self, node_name: str):
         # We don't check the HTTPS certificate, as it's not always valid for the router's subnet
         # but this causes unnecessary warnings in the logs. To keep things tidy, turn off
         # these warnings.
@@ -129,7 +129,11 @@ class PeplinkRouterNode(Node):
 
         self.updater = Updater(self, 1.0)
         self.updater.setHardwareID(f'peplink ({node_name})')
-        self.updater.add('Peplink Diagnostics', self.generate_diagnostics)
+
+        self.updater.add(
+            node_name.replace('_node', '').replace('_', ' ').title(),
+            self.generate_diagnostics,
+        )
 
         # ROS parameter declarations
         self.ip_address_param = self.declare_parameter(
