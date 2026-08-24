@@ -651,8 +651,10 @@ class PeplinkRouterNode(Node):
                     cellular = Connection()
                     cellular.essid = wan.cellular.carrier.name
                     cellular.bssid = wan.cellular.network
-                    band = wan.cellular.band[0] if wan.cellular.band else None
+                    rat = wan.cellular.rat[0] if wan.cellular.rat else None
+                    band = rat.band[0] if rat and rat.band else None
                     cellular.signal_level = band.signal.strength if band else wan.modem.signal_level
+                    cellular.noise_level = band.signal.rsrp if band else 0
                     signal_bars = wan.cellular.signal_level or wan.modem.signal_level
                     cellular.link_quality_raw = str(signal_bars)
                     cellular.link_quality = signal_bars / 5.0
