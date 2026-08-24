@@ -659,7 +659,7 @@ class PeplinkRouterNode(Node):
                     rat = wan.cellular.rat[0] if wan.cellular.rat else None
                     band = rat.band[0] if rat and rat.band else None
                     cellular.signal_level = band.signal.rsrp if band else wan.modem.signal_level
-                    cellular.noise_level = band.signal.sinr if band else 0
+                    cellular.noise_level = int(band.signal.sinr) if band else 0
                     cellular.frequency = band_frequencies.get(band.name, 0.0) if band else 0.0
                     signal_bars = wan.cellular.signal_level or wan.modem.signal_level
                     cellular.link_quality_raw = str(signal_bars)
