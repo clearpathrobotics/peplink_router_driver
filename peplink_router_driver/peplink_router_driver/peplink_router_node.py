@@ -648,7 +648,15 @@ class PeplinkRouterNode(Node):
                     self.wifi_5g_signal_pub.publish(wan.wireless)
             elif wan.type == 'cellular':
                 if 'Connected' in wan.message:
-                    self.cellular_signal_pub.publish(wan.wireless)
+                    cellular = Connection()
+                    cellular.essid = wan.cellular.carrier.name
+                    cellular.bssid = wan.cellular.network
+                    band = wan.cellular.band[0] if wan.cellular.band else None
+                    cellular.signal_level = band.signal.strength if band else wan.modem.signal_level
+                    signal_bars = wan.cellular.signal_level or wan.modem.signal_level
+                    cellular.link_quality_raw = str(signal_bars)
+                    cellular.link_quality = signal_bars / 5.0
+                    self.cellular_signal_pub.publish(cellular)
 
             if wan.enable:
                 active_wans += 1
