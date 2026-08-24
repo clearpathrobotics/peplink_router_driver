@@ -648,13 +648,19 @@ class PeplinkRouterNode(Node):
                     self.wifi_5g_signal_pub.publish(wan.wireless)
             elif wan.type == 'cellular':
                 if 'Connected' in wan.message:
+                    band_frequencies = {
+                        'LTE Band 2': 1.9,
+                        'LTE Band 4': 2.1,
+                        'LTE Band 7': 2.6,
+                    }
                     cellular = Connection()
                     cellular.essid = wan.cellular.carrier.name
                     cellular.bssid = wan.cellular.network
                     rat = wan.cellular.rat[0] if wan.cellular.rat else None
                     band = rat.band[0] if rat and rat.band else None
-                    cellular.signal_level = band.signal.strength if band else wan.modem.signal_level
-                    cellular.noise_level = band.signal.rsrp if band else 0
+                    cellular.signal_level = band.signal.rsrp if band else wan.modem.signal_level
+                    cellular.noise_level = band.signal.snr if band else 0
+                    cellular.frequency = band_frequencies.get(band.name, 0.0) if band else 0.0
                     signal_bars = wan.cellular.signal_level or wan.modem.signal_level
                     cellular.link_quality_raw = str(signal_bars)
                     cellular.link_quality = signal_bars / 5.0
