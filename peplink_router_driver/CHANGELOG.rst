@@ -2,8 +2,8 @@
 Changelog for package peplink_router_driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.0.3 (2026-08-25)
+------------------
 * fix type mismatch
 * use sinr for noise level
 * added frequency field for LTE bands
